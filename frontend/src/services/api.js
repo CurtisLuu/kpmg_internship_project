@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { msalInstance } from '../msalConfig';
 
 // Configure the base URL for your backend API
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
@@ -8,6 +9,26 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+});
+
+// Add token to every request
+api.interceptors.request.use(async (config) => {
+  try {
+    const accounts = msalInstance.getAllAccounts();
+    if (accounts.length > 0) {
+      const response = await msalInstance.acquireTokenSilent({
+        scopes: ["openid", "profile", "email"],
+        account: accounts[0],
+      });
+      config.headers.Authorization = `Bearer ${response.accessToken}`;
+    }
+  } catch (error) {
+    console.error('Error acquiring token:', error);
+    // Continue without token - backend will reject with 401
+  }
+  return config;
+}, (error) => {
+  return Promise.reject(error);
 });
 
 /**
@@ -35,6 +56,9 @@ export const sendMessageToAI = async (message, conversationHistory = []) => {
     
     if (error.response) {
       // Server responded with error
+      if (error.response.status === 401) {
+        throw new Error('Authentication failed. Please sign in again.');
+      }
       throw new Error(error.response.data.error || 'Server error occurred');
     } else if (error.request) {
       // Request made but no response

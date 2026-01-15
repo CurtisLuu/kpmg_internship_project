@@ -2,8 +2,15 @@ import React, { useState, useRef, useEffect } from 'react';
 import './App.css';
 import ChatMessage from './components/ChatMessage';
 import { sendMessageToAI } from './services/api';
+import { MsalProvider, useMsal } from "@azure/msal-react";
+import { msalInstance } from "./msalConfig";
+import AuthenticationComponent, { useBypassAuth } from './components/AuthenticationComponent';
 
-function App() {
+function AppContent() {
+  const { instance } = useMsal();
+  const bypassAuthContext = useBypassAuth();
+  const bypassAuth = bypassAuthContext?.bypassAuth;
+  const setBypassAuth = bypassAuthContext?.setBypassAuth;
   const [messages, setMessages] = useState([]);
   const [inputMessage, setInputMessage] = useState('');
   const [selectedColor, setSelectedColor] = useState('blue');
@@ -114,9 +121,21 @@ function App() {
     setPolicyFiles(files);
   };
 
+  const handleSignOut = async () => {
+    if (bypassAuth) {
+      setBypassAuth(false);
+    } else {
+      await instance.logout({
+        postLogoutRedirectUri: "/",
+      });
+    }
+  };
+
   return (
-    <div className="app">
-      <header className="app-header">
+    <MsalProvider instance={msalInstance}>
+      <AuthenticationComponent>
+        <div className="app">
+          <header className="app-header">
         <div className="header-left">
           <img src="/kpmg_logo.png" alt="KPMG" className="header-logo" />
           <span className="header-title">Client Compliance Tool</span>
@@ -124,6 +143,9 @@ function App() {
         <div className="header-actions">
           <button onClick={handleClearChat} className="clear-button">
             Clear Chat
+          </button>
+          <button onClick={handleSignOut} className="clear-button">
+            Sign Out
           </button>
           <div style={{ position: 'relative' }}>
             <button
@@ -279,9 +301,21 @@ function App() {
             Send
           </button>
         </form>
+        </div>
       </div>
-    </div>
-  </div>
+      </div>
+      </AuthenticationComponent>
+    </MsalProvider>
+  );
+}
+
+function App() {
+  return (
+    <MsalProvider instance={msalInstance}>
+      <AuthenticationComponent>
+        <AppContent />
+      </AuthenticationComponent>
+    </MsalProvider>
   );
 }
 

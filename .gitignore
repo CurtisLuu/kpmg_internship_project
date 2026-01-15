@@ -34,3 +34,6 @@ Thumbs.db
 
 # Testing
 coverage/
+
+#protect cosmo secrets
+functions/local.settings.json

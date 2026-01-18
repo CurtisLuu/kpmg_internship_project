@@ -4,17 +4,17 @@
 import os
 import json
 import uuid
-import base64
 import time
+import logging
 import pandas as pd
 from dotenv import load_dotenv
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from openai import OpenAI
-from azure.storage.queue import QueueClient
 from azure.cosmos import CosmosClient
+from docx import Document
+from PyPDF2 import PdfReader
 
-# Load env (keeps secrets out of code)
 load_dotenv()
 
 # --- Safe startup logs (do not print secrets) ---
@@ -38,24 +38,6 @@ client = OpenAI(
     base_url=endpoint,
     api_key=os.getenv("AZURE_OPENAI_API_KEY"),
 )
-
-# --- Initialize QueueClient once (reused across requests) ---
-QUEUE_CONN_STR = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
-QUEUE_NAME = os.getenv("AZURE_STORAGE_QUEUE_NAME", "myqueue-items")
-
-queue_client = None
-if QUEUE_CONN_STR:
-    try:
-        queue_client = QueueClient.from_connection_string(
-            conn_str=QUEUE_CONN_STR, queue_name=QUEUE_NAME
-        )
-        # Ensure queue exists (idempotent)
-        queue_client.create_queue()
-        print(f"[Queue] Ready. Using queue: {QUEUE_NAME}")
-    except Exception as e:
-        print(f"[Queue Init] Warning: {e}")
-else:
-    print("[Queue Init] No AZURE_STORAGE_CONNECTION_STRING found.")
 
 # --- Initialize Cosmos DB client ---
 cosmos_endpoint = os.getenv("COSMOS_ENDPOINT")
@@ -109,163 +91,69 @@ def chat():
         return jsonify({"error": str(e)}), 500
 
 
-@app.route("/api/ingest", methods=["POST"])
-def ingest():
+@app.route("/api/get-uploaded-files", methods=["GET"])
+def get_uploaded_files():
     """
-    Accepts JSON and enqueues a single message for the Function to upsert into Cosmos DB.
-    Enforces 'userId' because Cosmos container PK is '/userId'.
+    Fetch existing uploaded files for a user.
+    Returns both CSV data and policy documents.
     """
-    if not queue_client:
-        return jsonify({"error": "Queue client not configured"}), 500
+    if not container:
+        return jsonify({"error": "Cosmos DB not configured"}), 500
 
     try:
-        payload = request.get_json(force=True) or {}
-        # Expected shape:
-        # {
-        #   "action": "upsert" | "delete",
-        #   "version": "v1",
-        #   "userId": "<optional top-level>",
-        #   "data": { "id": "doc-123", "title": "...", "content": "...", "userId": "<optional>" }
-        # }
+        # Query for CSV data (get distinct source files).
+        # Support legacy rows that may not have documentType set but have sourceFile.
+        csv_query = """
+        SELECT DISTINCT c.sourceFile
+        FROM c
+                WHERE (
+            c.documentType = @csvType OR NOT IS_DEFINED(c.documentType)
+          )
+          AND IS_DEFINED(c.sourceFile)
+        """
 
-        action = payload.get("action", "upsert")
-        version = payload.get("version", "latest")
-        data = payload.get("data", {}) or {}
+        csv_items = list(container.query_items(
+            query=csv_query,
+            parameters=[
+                {"name": "@csvType", "value": "csvData"}
+            ],
+            enable_cross_partition_query=True
+        ))
 
-        # Resolve id
-        message_id = payload.get("id") or data.get("id") or str(uuid.uuid4())
+        # Query for policy documents
+        policy_query = """
+        SELECT DISTINCT c.fileName, c.uploadedAt
+        FROM c
+        WHERE c.documentType = @policyType
+        """
 
-        if action not in ("upsert", "delete"):
-            return jsonify({"error": "Invalid action. Use 'upsert' or 'delete'."}), 400
+        policy_items = list(container.query_items(
+            query=policy_query,
+            parameters=[
+                {"name": "@policyType", "value": "policyDocument"}
+            ],
+            enable_cross_partition_query=True
+        ))
 
-        if action == "delete" and not (payload.get("id") or data.get("id")):
-            return jsonify({"error": "Delete requires 'id' or data.id"}), 400
+        # Format CSV files
+        csv_files = []
+        for item in csv_items:
+            csv_files.append({
+                "name": item.get("sourceFile", "Unknown")
+            })
 
-        # === Enforce Cosmos PK '/userId' ===
-        user_id = payload.get("userId") or data.get("userId")
-        if not user_id:
-            return jsonify({
-                "error": "Missing required partition key 'userId'. Include it at top-level or inside 'data'."
-            }), 400
-        # Ensure inside data for the Function to write it to Cosmos
-        data["userId"] = user_id
-
-        message = {
-            "id": message_id,
-            "action": action,
-            "version": version,
-            "userId": user_id,  # also include at top-level
-            "data": data,
-        }
-
-        # Send as plain JSON (Azure Queue will handle encoding)
-        queue_client.send_message(json.dumps(message))
-        return jsonify({"status": "queued", "messageId": message_id}), 202
-
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-
-
-
-@app.route("/api/upload-excel", methods=["POST"])
-def upload_excel():
-    """
-    Accept ANY CSV or XLSX and auto-generate missing fields.
-    Makes sure required fields for Cosmos DB exist: id + userId + content/title.
-    """
-    if not queue_client:
-        return jsonify({"error": "Queue client not configured"}), 500
-
-    if "file" not in request.files:
-        return jsonify({"error": "No file uploaded (must be 'file')."}), 400
-
-    file = request.files["file"]
-    filename = (file.filename or "").lower()
-
-    # Allow user to pass a default userId
-    global_userId = request.form.get("userId") or request.args.get("userId")
-
-    try:
-        # Read CSV or XLSX
-        if filename.endswith(".csv"):
-            df = pd.read_csv(file)
-        elif filename.endswith(".xlsx"):
-            df = pd.read_excel(file, engine="openpyxl")
-        else:
-            return jsonify({"error": "Only .csv or .xlsx files supported."}), 400
-
-        queued_ids = []
-
-        for _, row in df.iterrows():
-
-            # 1️⃣ AUTO‑GENERATE ID IF MISSING
-            if "id" in df.columns and pd.notna(row.get("id")):
-                row_id = str(row["id"])
-            else:
-                row_id = str(uuid.uuid4())
-
-            # 2️⃣ GET USERID (REQUIRED FOR COSMOS PK /userId)
-            if "userId" in df.columns and pd.notna(row.get("userId")):
-                user_id = str(row["userId"])
-            elif global_userId:
-                user_id = global_userId
-            else:
-                return jsonify({
-                    "error": (
-                        f"Row with auto-id '{row_id}' missing 'userId'. "
-                        "Add a userId column or send ?userId=xxxx in upload."
-                    )
-                }), 400
-
-            # 3️⃣ TITLE AUTO-GENERATION
-            if "title" in df.columns and pd.notna(row.get("title")):
-                title = str(row["title"])
-            else:
-                title = f"Record {row_id}"
-
-            # 4️⃣ CONTENT AUTO-GENERATION
-            if "content" in df.columns and pd.notna(row.get("content")):
-                content = str(row["content"])
-            else:
-                # Combine all non-empty columns except userId
-                content = "\n".join(
-                    f"{col}: {row[col]}"
-                    for col in df.columns
-                    if col != "userId" and pd.notna(row[col])
-                )
-
-            # 5️⃣ BUILD QUEUE MESSAGE
-            message = {
-                "id": row_id,
-                "action": "upsert",
-                "version": "v1",
-                "userId": user_id,
-                "data": {
-                    "id": row_id,
-                    "title": title,
-                    "content": content,
-                    "userId": user_id
-                }
-            }
-
-            # Ensure valid JSON serialization
-            try:
-                message_json = json.dumps(message)
-                queue_client.send_message(message_json)
-                queued_ids.append(row_id)
-            except (TypeError, ValueError) as e:
-                logging.error(f"Failed to serialize row {row_id}: {str(e)}")
-                return jsonify({
-                    "error": f"Row {row_id} contains invalid data for JSON: {str(e)}"
-                }), 400
+        # Format policy files
+        policy_files = []
+        for item in policy_items:
+            policy_files.append({
+                "name": item.get("fileName", "Unknown"),
+                "uploadedAt": item.get("uploadedAt")
+            })
 
         return jsonify({
-            "status": "queued",
-            "rowsQueued": len(queued_ids),
-            "ids": queued_ids
-        }), 202
+            "csvFiles": csv_files,
+            "policyFiles": policy_files
+        }), 200
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -292,10 +180,13 @@ def upload_excel_direct():
         # DELETE EXISTING DOCUMENTS FOR THIS USER FIRST
         if global_userId:
             try:
-                delete_query = "SELECT c.id FROM c WHERE c.userId = @userId"
+                delete_query = "SELECT c.id FROM c WHERE c.userId = @userId AND c.documentType = @docType"
                 existing_docs = list(container.query_items(
                     query=delete_query,
-                    parameters=[{"name": "@userId", "value": global_userId}],
+                    parameters=[
+                        {"name": "@userId", "value": global_userId},
+                        {"name": "@docType", "value": "csvData"}
+                    ],
                     enable_cross_partition_query=True
                 ))
                 
@@ -304,17 +195,15 @@ def upload_excel_direct():
                     container.delete_item(item=doc["id"], partition_key=global_userId)
                     deleted_count += 1
                 
-                print(f"Deleted {deleted_count} existing documents for user {global_userId}")
+                print(f"Deleted {deleted_count} existing CSV documents for user {global_userId}")
             except Exception as del_err:
                 print(f"Warning: Failed to delete existing documents: {del_err}")
 
-        # Read CSV or XLSX
+        # Read CSV file
         if filename.endswith(".csv"):
             df = pd.read_csv(file)
-        elif filename.endswith(".xlsx"):
-            df = pd.read_excel(file, engine="openpyxl")
         else:
-            return jsonify({"error": "Only .csv or .xlsx files supported."}), 400
+            return jsonify({"error": "Only .csv files supported."}), 400
 
         processed_ids = []
         failed_rows = []
@@ -356,6 +245,7 @@ def upload_excel_direct():
                 document = {
                     "id": row_id,
                     "userId": user_id,
+                    "documentType": "csvData",
                     "title": title,
                     "content": content,
                     "version": "v1",
@@ -396,6 +286,140 @@ def upload_excel_direct():
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+# POLICY DOCUMENTS UPLOAD
+@app.route("/api/upload-policy-documents", methods=["POST"])
+def upload_policy_documents():
+    """
+    Upload policy documents (PDF, DOCX, DOC, TXT) and store directly in Cosmos DB.
+    Extracts text content and stores with documentType='policyDocument'.
+    Deletes existing policy documents for the user before uploading new ones.
+    """
+    if not container:
+        return jsonify({"error": "Cosmos DB not configured"}), 500
+
+    if "files" not in request.files:
+        return jsonify({"error": "No files uploaded (must be 'files')."}), 400
+
+    files = request.files.getlist("files")
+    global_userId = request.form.get("userId") or request.args.get("userId") or "default-user"
+
+    # DELETE EXISTING POLICY DOCUMENTS FOR THIS USER FIRST
+    try:
+        delete_query = "SELECT c.id FROM c WHERE c.userId = @userId AND c.documentType = @docType"
+        existing_docs = list(container.query_items(
+            query=delete_query,
+            parameters=[
+                {"name": "@userId", "value": global_userId},
+                {"name": "@docType", "value": "policyDocument"}
+            ],
+            enable_cross_partition_query=True
+        ))
+        
+        deleted_count = 0
+        for doc in existing_docs:
+            container.delete_item(item=doc["id"], partition_key=global_userId)
+            deleted_count += 1
+        
+        if deleted_count > 0:
+            logging.info(f"Deleted {deleted_count} existing policy documents for user {global_userId}")
+    except Exception as del_err:
+        logging.warning(f"Warning: Failed to delete existing policy documents: {del_err}")
+
+    processed_ids = []
+    failed_files = []
+
+    for file in files:
+        try:
+            filename = file.filename or "unknown"
+            file_ext = filename.lower().split(".")[-1]
+
+            # Extract text based on file type
+            content = None
+            if file_ext == "pdf":
+                content = extract_text_from_pdf(file)
+            elif file_ext in ("docx", "doc"):
+                content = extract_text_from_docx(file)
+            elif file_ext == "txt":
+                content = file.read().decode("utf-8", errors="ignore")
+            else:
+                failed_files.append(f"{filename}: Unsupported file type. Use PDF, DOCX, DOC, or TXT.")
+                continue
+
+            if not content or not content.strip():
+                failed_files.append(f"{filename}: No text content found.")
+                continue
+
+            # Create document for Cosmos DB
+            doc_id = str(uuid.uuid4())
+            document = {
+                "id": doc_id,
+                "userId": global_userId,
+                "documentType": "policyDocument",
+                "title": filename.rsplit(".", 1)[0],  # Remove extension
+                "content": content,
+                "fileName": filename,
+                "uploadedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "version": "v1"
+            }
+
+            # Write to Cosmos DB
+            container.upsert_item(document)
+
+            # Create embedding
+            try:
+                emb = client.embeddings.create(
+                    model=os.getenv("AZURE_OPENAI_EMBEDDINGS_DEPLOYMENT"),
+                    input=content[:8000]  # Limit to 8000 chars for embedding
+                )
+                document["embedding"] = emb.data[0].embedding
+                container.upsert_item(document)
+                time.sleep(0.1)  # Avoid rate limiting
+            except Exception as emb_err:
+                logging.warning(f"Embedding failed for {filename}: {str(emb_err)}")
+                # Continue anyway - document is stored without embedding
+
+            processed_ids.append(doc_id)
+            logging.info(f"Successfully processed policy document: {filename}")
+
+        except Exception as file_err:
+            failed_files.append(f"{file.filename}: {str(file_err)}")
+            logging.error(f"Error processing file {file.filename}: {str(file_err)}")
+
+    return jsonify({
+        "status": "completed",
+        "filesProcessed": len(processed_ids),
+        "filesFailed": len(failed_files),
+        "ids": processed_ids,
+        "errors": failed_files if failed_files else None
+    }), 200
+
+
+def extract_text_from_pdf(file):
+    """Extract text from PDF file."""
+    try:
+        file.seek(0)
+        pdf_reader = PdfReader(file)
+        text = ""
+        for page in pdf_reader.pages:
+            text += page.extract_text() + "\n"
+        return text
+    except Exception as e:
+        logging.error(f"PDF extraction error: {str(e)}")
+        raise
+
+
+def extract_text_from_docx(file):
+    """Extract text from DOCX/DOC file."""
+    try:
+        file.seek(0)
+        doc = Document(file)
+        text = "\n".join([para.text for para in doc.paragraphs])
+        return text
+    except Exception as e:
+        logging.error(f"DOCX extraction error: {str(e)}")
+        raise
+
 
 # RAG QUERY SETUP
 @app.route("/api/rag-query", methods=["POST"])

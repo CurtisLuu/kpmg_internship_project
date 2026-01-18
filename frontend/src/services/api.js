@@ -123,4 +123,56 @@ export const ragQuery = async (question) => {
   }
 };
 
+/**
+ * Get uploaded files for a user
+ * @param {string} userId - Optional user ID (defaults to 'default-user')
+ */
+export const getUploadedFiles = async (userId = 'default-user') => {
+  try {
+    const response = await api.get('/api/get-uploaded-files', {
+      params: { userId }
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching uploaded files:', error);
+    return { csvFiles: [], policyFiles: [] };
+  }
+};
+
+/**
+ * Upload policy documents (PDF, DOCX, DOC, TXT) to backend
+ * @param {File[]} files - Array of policy document files
+ * @param {string} userId - Optional user ID (defaults to 'default-user')
+ */
+export const uploadPolicyDocuments = async (files, userId = 'default-user') => {
+  try {
+    const formData = new FormData();
+    
+    // Add all files
+    files.forEach((file) => {
+      formData.append("files", file);
+    });
+    
+    // Add userId
+    formData.append("userId", userId);
+
+    const response = await axios.post(
+      `${API_BASE_URL}/api/upload-policy-documents`,
+      formData,
+      {
+        headers: { "Content-Type": "multipart/form-data" },
+      }
+    );
+
+    return response.data;
+  } catch (error) {
+    console.error("Policy document upload failed:", error);
+
+    if (error.response) {
+      throw new Error(error.response.data.error || "Upload failed");
+    }
+    throw new Error("Unable to upload policy documents.");
+  }
+};
+
 export default api;

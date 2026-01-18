@@ -3,6 +3,7 @@ flask
 flask-cors
 python-dotenv
 openai>=1.0.0
-azure-storage-queue
 pandas
-openpyxl
+python-docx
+PyPDF2
+uuid

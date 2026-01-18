@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import './App.css';
 import ChatMessage from './components/ChatMessage';
 //
-import { sendMessageToAI, uploadExcelFile, ragQuery } from './services/api';
+import { sendMessageToAI, uploadExcelFile, ragQuery, uploadPolicyDocuments, getUploadedFiles } from './services/api';
 //
 function App() {
   const [messages, setMessages] = useState([]);
@@ -10,8 +10,10 @@ function App() {
   const [selectedColor, setSelectedColor] = useState('blue');
   const [showSettings, setShowSettings] = useState(false);
   const [clientFiles, setClientFiles] = useState([]);
+  const [uploadedClientFiles, setUploadedClientFiles] = useState([]);
   const [clientDragActive, setClientDragActive] = useState(false);
   const [policyFiles, setPolicyFiles] = useState([]);
+  const [uploadedPolicyFiles, setUploadedPolicyFiles] = useState([]);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef(null);
@@ -24,6 +26,20 @@ function App() {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  useEffect(() => {
+    // Fetch existing uploaded files when component mounts
+    const fetchFiles = async () => {
+      const files = await getUploadedFiles();
+      if (files.csvFiles.length > 0) {
+        setUploadedClientFiles(files.csvFiles.map(f => ({ name: f.name })));
+      }
+      if (files.policyFiles.length > 0) {
+        setUploadedPolicyFiles(files.policyFiles.map(f => ({ name: f.name })));
+      }
+    };
+    fetchFiles();
+  }, []);
 
   useEffect(() => {
     function handleClickOutside(e) {
@@ -52,9 +68,37 @@ function App() {
 
       alert(`Uploaded ${result.rowsProcessed || result.rowsQueued} rows to the server.`);
       console.log("Upload result:", result);
+      
+      // Store uploaded files and clear selection
+      setUploadedClientFiles([file]);
+      setClientFiles([]);
 
     } catch (error) {
       console.error("Upload failed:", error);
+      alert(error.message || "Upload failed. See console.");
+    }
+  };
+  //
+  const handlePolicyDocumentUpload = async () => {
+    if (policyFiles.length === 0) {
+      alert("Please select policy document files first.");
+      return;
+    }
+
+    try {
+      console.log("Uploading policy documents:", policyFiles.map(f => f.name));
+
+      const result = await uploadPolicyDocuments(policyFiles);
+
+      alert(`Uploaded ${result.filesProcessed} policy document(s) to the database.`);
+      console.log("Upload result:", result);
+      
+      // Store uploaded files and clear selection
+      setUploadedPolicyFiles(policyFiles);
+      setPolicyFiles([]);
+
+    } catch (error) {
+      console.error("Policy document upload failed:", error);
       alert(error.message || "Upload failed. See console.");
     }
   };
@@ -236,6 +280,17 @@ function App() {
               </button>
             )}
 
+            {uploadedClientFiles.length > 0 && clientFiles.length === 0 && (
+              <div>
+                <p style={{ marginTop: "10px", fontSize: "0.9em", color: "#666" }}>Uploaded files:</p>
+                <ul className="file-list">
+                  {uploadedClientFiles.map((f, i) => (
+                    <li key={i}>{f.name}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
           </div>
 
           <div className={`upload-section ${sidebarCollapsed ? 'hidden' : ''}`}>
@@ -277,6 +332,27 @@ function App() {
                   <li key={i}>{f.name}</li>
                 ))}
               </ul>
+            )}
+
+            {policyFiles.length > 0 && (
+              <button
+                onClick={handlePolicyDocumentUpload}
+                className="upload-button"
+                style={{ marginTop: "10px" }}
+              >
+                Upload to Backend
+              </button>
+            )}
+
+            {uploadedPolicyFiles.length > 0 && policyFiles.length === 0 && (
+              <div>
+                <p style={{ marginTop: "10px", fontSize: "0.9em", color: "#666" }}>Uploaded files:</p>
+                <ul className="file-list">
+                  {uploadedPolicyFiles.map((f, i) => (
+                    <li key={i}>{f.name}</li>
+                  ))}
+                </ul>
+              </div>
             )}
           </div>
         </aside>

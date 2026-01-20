@@ -40,10 +40,11 @@ api.interceptors.request.use(async (config) => {
  * @param {Array} conversationHistory - Previous messages in the conversation
  * @returns {Promise<Object>} - Response from the AI
  */
-export const sendMessageToAI = async (message, conversationHistory = []) => {
+export const sendMessageToAI = async (message, conversationHistory = [], model = 'azure') => {
   try {
     const response = await api.post('/api/chat', {
       message,
+      model,
       conversationHistory: conversationHistory.map(msg => ({
         role: msg.role,
         content: msg.content

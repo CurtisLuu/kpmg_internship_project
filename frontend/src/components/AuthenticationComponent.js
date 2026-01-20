@@ -110,16 +110,16 @@ const AuthenticationComponent = ({ children }) => {
           maxWidth: '500px'
         }}>
           <img 
-            src="/kpmg_logo.png" 
+            src="/kpmg_login_logo.png" 
             alt="KPMG" 
             style={{ 
-              height: '60px', 
-              marginBottom: '24px',
+              height: '180px', 
+              marginBottom: '8px',
               objectFit: 'contain'
             }} 
           />
-          <h1 style={{ marginBottom: '16px', color: '#333', fontSize: '28px', fontWeight: 'bold' }}>
-            KPMG Client Compliance Tool
+          <h1 style={{ marginBottom: '16px', color: '#00338D', fontSize: '28px', fontWeight: 'bold' }}>
+            Client Compliance Tool
           </h1>
           <p style={{ marginBottom: '40px', color: '#666', fontSize: '16px', lineHeight: '1.5' }}>
             Please sign in with your KPMG Microsoft account
@@ -130,7 +130,7 @@ const AuthenticationComponent = ({ children }) => {
             style={{
               padding: '12px 32px',
               fontSize: '16px',
-              background: 'linear-gradient(180deg, #0077ea, #0057c2)',
+              background: 'linear-gradient(180deg, #00338D, #002266)',
               color: 'white',
               border: 'none',
               borderRadius: '6px',
@@ -139,10 +139,10 @@ const AuthenticationComponent = ({ children }) => {
               fontWeight: 'bold',
               transition: 'all 0.2s',
               width: '100%',
-              boxShadow: '0 4px 12px rgba(0, 119, 234, 0.3)'
+              boxShadow: '0 4px 12px rgba(0, 51, 141, 0.3)'
             }}
-            onMouseOver={(e) => !loading && (e.target.style.transform = 'translateY(-2px)', e.target.style.boxShadow = '0 6px 16px rgba(0, 119, 234, 0.4)')}
-            onMouseOut={(e) => (e.target.style.transform = 'translateY(0)', e.target.style.boxShadow = '0 4px 12px rgba(0, 119, 234, 0.3)')}
+            onMouseOver={(e) => !loading && (e.target.style.transform = 'translateY(-2px)', e.target.style.boxShadow = '0 6px 16px rgba(0, 51, 141, 0.4)')}
+            onMouseOut={(e) => (e.target.style.transform = 'translateY(0)', e.target.style.boxShadow = '0 4px 12px rgba(0, 51, 141, 0.3)')}
           >
             {loading ? 'Signing in...' : 'Sign In with Microsoft'}
           </button>

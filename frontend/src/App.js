@@ -23,6 +23,7 @@ function AppContent() {
   const [uploadedPolicyFiles, setUploadedPolicyFiles] = useState([]);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [modelSource, setModelSource] = useState('azure'); // 'azure' or 'postgres'
   const messagesEndRef = useRef(null);
   const settingsRef = useRef(null);
 
@@ -127,17 +128,22 @@ function AppContent() {
     setIsLoading(true);
 
     try {
-      // Call RAG query to get context from uploaded documents
-      const ragResult = await ragQuery(inputMessage);
-  
-      // Use RAG answer if available, otherwise fall back to regular chat
       let assistantContent;
-      if (ragResult && ragResult.answer) {
-        assistantContent = ragResult.answer;
-      } else {
-        // Fallback to regular chat if no RAG results
-        const response = await sendMessageToAI(inputMessage, messages);
+
+      if (modelSource === 'postgres') {
+        // Route directly to Postgres AI (db-backed)
+        const response = await sendMessageToAI(inputMessage, messages, 'postgres');
         assistantContent = response.message;
+      } else {
+        // Azure path: try RAG first, then fallback chat
+        const ragResult = await ragQuery(inputMessage);
+
+        if (ragResult && ragResult.answer) {
+          assistantContent = ragResult.answer;
+        } else {
+          const response = await sendMessageToAI(inputMessage, messages, 'azure');
+          assistantContent = response.message;
+        }
       }
       
       const assistantMessage = {
@@ -403,6 +409,15 @@ function AppContent() {
         </div>
 
         <form onSubmit={handleSendMessage} className="input-container">
+          <select
+            className="model-select"
+            value={modelSource}
+            onChange={(e) => setModelSource(e.target.value)}
+            disabled={isLoading}
+          >
+            <option value="azure">Obaduyi (files)</option>
+            <option value="postgres">Postgres AI (DB)</option>
+          </select>
           <input
             type="text"
             value={inputMessage}

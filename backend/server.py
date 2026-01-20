@@ -14,6 +14,7 @@ from functools import wraps
 from azure.cosmos import CosmosClient
 from docx import Document
 from PyPDF2 import PdfReader
+from postgres_agent import get_postgres_agent
 
 load_dotenv()
 
@@ -51,36 +52,8 @@ else:
         api_key=os.getenv("AZURE_OPENAI_API_KEY"),
     )
 
-# --- Postgres AI client (db-backed) ---
-postgres_endpoint = os.getenv("POSTGRES_API_ENDPOINT")
-postgres_api_key = os.getenv("POSTGRES_API_KEY")
-postgres_model = os.getenv("POSTGRES_MODEL", "gpt-4o-mini")
-postgres_auth_mode = os.getenv("POSTGRES_AUTH_MODE", "aad").lower()  # 'aad' or 'key'
-postgres_client = None
-
-if postgres_endpoint:
-    pg_base = postgres_endpoint.rstrip("/")
-    if not pg_base.endswith("/openai/v1"):
-        pg_base = pg_base + "/openai/v1"
-    try:
-        if postgres_auth_mode == "aad":
-            credential = DefaultAzureCredential()
-
-            def _pg_token():
-                token = credential.get_token("https://cognitiveservices.azure.com/.default")
-                return token.token
-
-            postgres_client = OpenAI(base_url=pg_base, azure_ad_token_provider=_pg_token)
-            print("[Postgres AI] client ready (AAD token)")
-        else:
-            if not postgres_api_key:
-                raise RuntimeError("POSTGRES_API_KEY missing for key auth")
-            postgres_client = OpenAI(base_url=pg_base, api_key=postgres_api_key)
-            print("[Postgres AI] client ready (api-key)")
-    except Exception as e:
-        print(f"[Postgres AI] init failed: {e}")
-else:
-    print("[Postgres AI] Missing POSTGRES_API_ENDPOINT")
+# --- Azure AI Foundry Postgres Agent (db-backed with PostgreSQL access) ---
+postgres_agent = get_postgres_agent()
 
 # Azure AD Configuration
 TENANT_ID = "9f58333b-9cca-4bd9-a7d8-e151e43b79f3"
@@ -199,24 +172,30 @@ def chat():
         )
 
         # Pick client/model based on requested source
-        active_client = client
-        active_model = os.getenv("AZURE_OPENAI_DEPLOYMENT")
-
         if model_source == "postgres":
-            if not postgres_client:
-                return jsonify({"error": "Postgres AI not configured"}), 400
-            active_client = postgres_client
-            active_model = postgres_model
+            # Use Azure AI Foundry Postgres Agent (has PostgreSQL database access)
+            if not postgres_agent.is_ready():
+                return jsonify({"error": "Postgres AI Agent not configured"}), 400
+            
+            try:
+                text = postgres_agent.chat(message, history)
+                return jsonify({"message": text}), 200
+            except Exception as e:
+                return jsonify({"error": str(e)}), 500
+        else:
+            # Use regular Azure OpenAI for non-postgres requests
+            active_client = client
+            active_model = os.getenv("AZURE_OPENAI_DEPLOYMENT")
+            
+            completion = active_client.chat.completions.create(
+                model=active_model,
+                messages=messages,
+                max_tokens=512,
+                temperature=0.7,
+            )
 
-        completion = active_client.chat.completions.create(
-            model=active_model,
-            messages=messages,
-            max_tokens=512,
-            temperature=0.7,
-        )
-
-        text = completion.choices[0].message.content if completion.choices else ""
-        return jsonify({"message": text}), 200
+            text = completion.choices[0].message.content if completion.choices else ""
+            return jsonify({"message": text}), 200
 
     except Exception as e:
         print(f"Error in chat endpoint: {e}")

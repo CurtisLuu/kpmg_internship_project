@@ -1,4 +1,5 @@
 import React from 'react';
+import ReactMarkdown from 'react-markdown';
 import './ChatMessage.css';
 
 function ChatMessage({ message }) {
@@ -23,7 +24,7 @@ function ChatMessage({ message }) {
           {isUser ? 'You' : 'AI Assistant'}
         </div>
         <div className="message-text">
-          {message.content}
+          <ReactMarkdown>{message.content}</ReactMarkdown>
         </div>
         <div className="message-timestamp">
           {new Date(message.timestamp).toLocaleTimeString()}

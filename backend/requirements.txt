@@ -8,3 +8,4 @@ python-docx
 PyPDF2
 azure-cosmos
 azure-identity
+azure-ai-projects>=2.0.0b1

@@ -131,9 +131,24 @@ function AppContent() {
       let assistantContent;
 
       if (modelSource === 'postgres') {
-        // Route directly to Postgres AI (db-backed)
-        const response = await sendMessageToAI(inputMessage, messages, 'postgres');
-        assistantContent = response.message;
+        // Route to Postgres AI; if not configured, fall back to Azure path
+        try {
+          const response = await sendMessageToAI(inputMessage, messages, 'postgres');
+          assistantContent = response.message;
+        } catch (err) {
+          const msg = err?.message || '';
+          if (msg.includes('Postgres AI not configured')) {
+            const ragResult = await ragQuery(inputMessage);
+            if (ragResult && ragResult.answer) {
+              assistantContent = ragResult.answer;
+            } else {
+              const response = await sendMessageToAI(inputMessage, messages, 'azure');
+              assistantContent = response.message;
+            }
+          } else {
+            throw err;
+          }
+        }
       } else {
         // Azure path: try RAG first, then fallback chat
         const ragResult = await ragQuery(inputMessage);

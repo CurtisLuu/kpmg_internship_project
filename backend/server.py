@@ -8,6 +8,7 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 from dotenv import load_dotenv
 from openai import OpenAI, AzureOpenAI
+from azure.identity import DefaultAzureCredential
 from jwt import PyJWKClient, decode
 from functools import wraps
 from azure.cosmos import CosmosClient
@@ -49,6 +50,37 @@ else:
         base_url=endpoint,
         api_key=os.getenv("AZURE_OPENAI_API_KEY"),
     )
+
+# --- Postgres AI client (db-backed) ---
+postgres_endpoint = os.getenv("POSTGRES_API_ENDPOINT")
+postgres_api_key = os.getenv("POSTGRES_API_KEY")
+postgres_model = os.getenv("POSTGRES_MODEL", "gpt-4o-mini")
+postgres_auth_mode = os.getenv("POSTGRES_AUTH_MODE", "aad").lower()  # 'aad' or 'key'
+postgres_client = None
+
+if postgres_endpoint:
+    pg_base = postgres_endpoint.rstrip("/")
+    if not pg_base.endswith("/openai/v1"):
+        pg_base = pg_base + "/openai/v1"
+    try:
+        if postgres_auth_mode == "aad":
+            credential = DefaultAzureCredential()
+
+            def _pg_token():
+                token = credential.get_token("https://cognitiveservices.azure.com/.default")
+                return token.token
+
+            postgres_client = OpenAI(base_url=pg_base, azure_ad_token_provider=_pg_token)
+            print("[Postgres AI] client ready (AAD token)")
+        else:
+            if not postgres_api_key:
+                raise RuntimeError("POSTGRES_API_KEY missing for key auth")
+            postgres_client = OpenAI(base_url=pg_base, api_key=postgres_api_key)
+            print("[Postgres AI] client ready (api-key)")
+    except Exception as e:
+        print(f"[Postgres AI] init failed: {e}")
+else:
+    print("[Postgres AI] Missing POSTGRES_API_ENDPOINT")
 
 # Azure AD Configuration
 TENANT_ID = "9f58333b-9cca-4bd9-a7d8-e151e43b79f3"
@@ -155,6 +187,7 @@ def chat():
         data = request.get_json(force=True) or {}
         message = data.get("message")
         history = data.get("conversationHistory", [])
+        model_source = (data.get("model") or "azure").lower()
 
         if not message:
             return jsonify({"error": "Missing 'message'"}), 400
@@ -165,10 +198,20 @@ def chat():
             + [{"role": "user", "content": message}]
         )
 
-        completion = client.chat.completions.create(
-            model=os.getenv("AZURE_OPENAI_DEPLOYMENT"),
+        # Pick client/model based on requested source
+        active_client = client
+        active_model = os.getenv("AZURE_OPENAI_DEPLOYMENT")
+
+        if model_source == "postgres":
+            if not postgres_client:
+                return jsonify({"error": "Postgres AI not configured"}), 400
+            active_client = postgres_client
+            active_model = postgres_model
+
+        completion = active_client.chat.completions.create(
+            model=active_model,
             messages=messages,
-            max_completion_tokens=512,
+            max_tokens=512,
             temperature=0.7,
         )
 

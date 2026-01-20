@@ -7,3 +7,4 @@ pandas
 python-docx
 PyPDF2
 azure-cosmos
+azure-identity

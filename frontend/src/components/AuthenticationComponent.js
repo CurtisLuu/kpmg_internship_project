@@ -82,7 +82,8 @@ const AuthenticationComponent = ({ children }) => {
         alignItems: 'center',
         height: '100vh',
         fontSize: '18px',
-        color: '#666'
+        color: '#00338D',
+        backgroundColor: '#f9f9f9'
       }}>
         Loading...
       </div>
@@ -97,7 +98,7 @@ const AuthenticationComponent = ({ children }) => {
         justifyContent: 'center',
         alignItems: 'center',
         height: '100vh',
-        backgroundColor: '#f5f5f5',
+        backgroundColor: '#f0f4f9',
         gap: '20px'
       }}>
         <div style={{
@@ -105,7 +106,7 @@ const AuthenticationComponent = ({ children }) => {
           padding: '60px 40px',
           backgroundColor: 'white',
           borderRadius: '12px',
-          boxShadow: '0 4px 16px rgba(0, 0, 0, 0.12)',
+          boxShadow: '0 4px 16px rgba(0, 51, 141, 0.15)',
           minWidth: '420px',
           maxWidth: '500px'
         }}>
@@ -121,7 +122,7 @@ const AuthenticationComponent = ({ children }) => {
           <h1 style={{ marginBottom: '16px', color: '#00338D', fontSize: '28px', fontWeight: 'bold' }}>
             Client Compliance Tool
           </h1>
-          <p style={{ marginBottom: '40px', color: '#666', fontSize: '16px', lineHeight: '1.5' }}>
+          <p style={{ marginBottom: '40px', color: '#00338D', fontSize: '16px', lineHeight: '1.5', opacity: 0.8 }}>
             Please sign in with your KPMG Microsoft account
           </p>
           <button
@@ -154,16 +155,16 @@ const AuthenticationComponent = ({ children }) => {
               padding: '10px 24px',
               fontSize: '14px',
               background: 'transparent',
-              color: '#666',
-              border: '1px solid #ddd',
+              color: '#00338D',
+              border: '1px solid #00338D',
               borderRadius: '6px',
               cursor: 'pointer',
               fontWeight: '500',
               transition: 'all 0.2s',
               width: '100%'
             }}
-            onMouseOver={(e) => (e.target.style.backgroundColor = '#f8f8f8', e.target.style.borderColor = '#bbb')}
-            onMouseOut={(e) => (e.target.style.backgroundColor = 'transparent', e.target.style.borderColor = '#ddd')}
+            onMouseOver={(e) => (e.target.style.backgroundColor = '#f0f4f9', e.target.style.borderColor = '#002266')}
+            onMouseOut={(e) => (e.target.style.backgroundColor = 'transparent', e.target.style.borderColor = '#00338D')}
           >
             Bypass login for application trial
           </button>

@@ -253,7 +253,44 @@ function AppContent() {
               ?
             </button>
             <div ref={settingsRef} className={`settings-dropdown ${showSettings ? 'open' : ''}`}>
-              <div className="settings-placeholder">Settings</div>
+              <div style={{ 
+                display: 'flex', 
+                flexDirection: 'column',
+                gap: '16px',
+                minWidth: '380px'
+              }}>
+                <h3 style={{ margin: 0, color: '#00338D', fontSize: '16px', fontWeight: 'bold' }}>
+                  AI Bot Guide
+                </h3>
+                
+                <div style={{
+                  padding: '12px',
+                  backgroundColor: 'rgba(0, 51, 141, 0.08)',
+                  borderRadius: '6px',
+                  borderLeft: '3px solid #00338D'
+                }}>
+                  <h4 style={{ margin: '0 0 6px 0', color: '#00338D', fontSize: '14px', fontWeight: '600' }}>
+                    📄 File Reader
+                  </h4>
+                  <p style={{ margin: 0, color: '#444', fontSize: '13px', lineHeight: '1.4' }}>
+                    Quick reference and analysis of uploaded policies. Cross-check datasets you add to ensure compliance and consistency across your documents.
+                  </p>
+                </div>
+                
+                <div style={{
+                  padding: '12px',
+                  backgroundColor: 'rgba(0, 102, 204, 0.08)',
+                  borderRadius: '6px',
+                  borderLeft: '3px solid #0066CC'
+                }}>
+                  <h4 style={{ margin: '0 0 6px 0', color: '#0066CC', fontSize: '14px', fontWeight: '600' }}>
+                    🗄️ Postgres AI
+                  </h4>
+                  <p style={{ margin: 0, color: '#444', fontSize: '13px', lineHeight: '1.4' }}>
+                    Connect to your investment firm's database for advanced analytics. Transform complex data into actionable insights and generate compliance reports.
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -430,7 +467,7 @@ function AppContent() {
             onChange={(e) => setModelSource(e.target.value)}
             disabled={isLoading}
           >
-            <option value="azure">Obaduyi (files)</option>
+            <option value="azure">File reader</option>
             <option value="postgres">Postgres AI (DB)</option>
           </select>
           <input

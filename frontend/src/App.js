@@ -14,7 +14,6 @@ function AppContent() {
 
   const [messages, setMessages] = useState([]);
   const [inputMessage, setInputMessage] = useState('');
-  const [selectedColor, setSelectedColor] = useState('blue');
   const [showSettings, setShowSettings] = useState(false);
   const [clientFiles, setClientFiles] = useState([]);
   const [uploadedClientFiles, setUploadedClientFiles] = useState([]);
@@ -119,7 +118,6 @@ function AppContent() {
       id: Date.now(),
       role: 'user',
       content: inputMessage,
-      color: selectedColor,
       timestamp: new Date().toISOString()
     };
 

@@ -11,7 +11,6 @@ const AuthenticationComponent = ({ children }) => {
   const { instance, accounts } = useMsal();
   const isAuthenticated = useIsAuthenticated();
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
   const [bypassAuth, setBypassAuth] = useState(false);
 
   useEffect(() => {
@@ -22,7 +21,6 @@ const AuthenticationComponent = ({ children }) => {
       })
       .catch((error) => {
         console.error("Error during redirect handling:", error);
-        setError("Authentication error occurred");
         setLoading(false);
       });
   }, [instance]);
@@ -30,47 +28,13 @@ const AuthenticationComponent = ({ children }) => {
   const handleLogin = async () => {
     try {
       setLoading(true);
-      setError(null);
       await instance.loginPopup({
         scopes: ["openid", "profile", "email"],
       });
     } catch (error) {
       console.error("Login error:", error);
-      setError("Failed to login. Please try again.");
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleLogout = async () => {
-    try {
-      setLoading(true);
-      await instance.logout({
-        postLogoutRedirectUri: "/",
-      });
-    } catch (error) {
-      console.error("Logout error:", error);
-      setError("Failed to logout. Please try again.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const getAccessToken = async () => {
-    try {
-      const response = await instance.acquireTokenSilent({
-        scopes: ["openid", "profile", "email"],
-        account: accounts[0],
-      });
-      return response.accessToken;
-    } catch (error) {
-      if (error instanceof InteractionRequiredAuthError) {
-        const response = await instance.acquireTokenPopup({
-          scopes: ["openid", "profile", "email"],
-        });
-        return response.accessToken;
-      }
-      throw error;
     }
   };
 
@@ -142,8 +106,8 @@ const AuthenticationComponent = ({ children }) => {
               width: '100%',
               boxShadow: '0 4px 12px rgba(0, 51, 141, 0.3)'
             }}
-            onMouseOver={(e) => !loading && (e.target.style.transform = 'translateY(-2px)', e.target.style.boxShadow = '0 6px 16px rgba(0, 51, 141, 0.4)')}
-            onMouseOut={(e) => (e.target.style.transform = 'translateY(0)', e.target.style.boxShadow = '0 4px 12px rgba(0, 51, 141, 0.3)')}
+            onMouseOver={(e) => { if (!loading) { e.target.style.transform = 'translateY(-2px)'; e.target.style.boxShadow = '0 6px 16px rgba(0, 51, 141, 0.4)'; } }}
+            onMouseOut={(e) => { e.target.style.transform = 'translateY(0)'; e.target.style.boxShadow = '0 4px 12px rgba(0, 51, 141, 0.3)'; }}
           >
             {loading ? 'Signing in...' : 'Sign In with Microsoft'}
           </button>
@@ -163,8 +127,8 @@ const AuthenticationComponent = ({ children }) => {
               transition: 'all 0.2s',
               width: '100%'
             }}
-            onMouseOver={(e) => (e.target.style.backgroundColor = '#f0f4f9', e.target.style.borderColor = '#002266')}
-            onMouseOut={(e) => (e.target.style.backgroundColor = 'transparent', e.target.style.borderColor = '#00338D')}
+            onMouseOver={(e) => { e.target.style.backgroundColor = '#f0f4f9'; e.target.style.borderColor = '#002266'; }}
+            onMouseOut={(e) => { e.target.style.backgroundColor = 'transparent'; e.target.style.borderColor = '#00338D'; }}
           >
             Bypass login for application trial
           </button>

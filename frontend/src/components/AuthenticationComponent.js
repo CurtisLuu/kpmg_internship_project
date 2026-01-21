@@ -1,6 +1,5 @@
 import React, { useEffect, useState, createContext, useContext } from 'react';
 import { useMsal, useIsAuthenticated } from "@azure/msal-react";
-import { InteractionRequiredAuthError } from "@azure/msal-browser";
 
 // Create context for bypass auth state
 const BypassAuthContext = createContext();
@@ -8,7 +7,7 @@ const BypassAuthContext = createContext();
 export const useBypassAuth = () => useContext(BypassAuthContext);
 
 const AuthenticationComponent = ({ children }) => {
-  const { instance, accounts } = useMsal();
+  const { instance } = useMsal();
   const isAuthenticated = useIsAuthenticated();
   const [loading, setLoading] = useState(true);
   const [bypassAuth, setBypassAuth] = useState(false);

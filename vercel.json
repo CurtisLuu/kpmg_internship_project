@@ -1,0 +1,14 @@
+
+{
+  "functions": {
+    "backend/api/**/*.js": {
+      "runtime": "nodejs18.x"
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/api/:match*",
+      "destination": "/backend/api/:match*"
+    }
+  ]
+}
